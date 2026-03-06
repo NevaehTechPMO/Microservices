@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+requests
+img2pdf
+python-multipart
+Pillow
