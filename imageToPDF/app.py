@@ -1,4 +1,5 @@
 import io
+import os
 import requests
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import Response
@@ -40,8 +41,29 @@ async def convert_urls(urls: List[str] = Body(..., embed=True)):
 
     try:
         for url in urls:
-            logger.info(f"Downloading image: {url}")
-            response = requests.get(url, timeout=30)
+            original_url = url
+            
+            # Application workaround for Hairpin NAT / Internal routing
+            rewrite_from = os.getenv("URL_REWRITE_FROM", "128.185.184.98")
+            rewrite_to = os.getenv("URL_REWRITE_TO", "172.17.0.1")  # Default docker bridge network gateway
+            
+            if rewrite_from and rewrite_from in url:
+                url = url.replace(rewrite_from, rewrite_to)
+                logger.info(f"Rewrote URL for internal routing: {original_url} -> {url}")
+            else:
+                logger.info(f"Downloading image: {url}")
+
+            try:
+                response = requests.get(url, timeout=30)
+            except requests.exceptions.ConnectionError:
+                # Fallback to host.docker.internal if 172.17.0.1 fails (e.g. Docker Desktop on Mac/Windows)
+                if rewrite_to == "172.17.0.1":
+                    fallback_url = original_url.replace(rewrite_from, "host.docker.internal")
+                    logger.info(f"Initial internal IP failed, trying fallback: {fallback_url}")
+                    response = requests.get(fallback_url, timeout=30)
+                else:
+                    raise
+
             response.raise_for_status()
             
             content = response.content
